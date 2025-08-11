@@ -1,0 +1,29 @@
+{
+  "name": "aspect-ui-code-data",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node api-server.js",
+    "dev": "nodemon api-server.js",
+    "fetch": "node fetch-github-data.js",
+    "update-db": "node update-database.js",
+    "setup": "npm run fetch && npm run update-db",
+    "clear-db": "node -e \"require('./update-database.js').clearDatabase()\"",
+    "backup-db": "node -e \"require('./update-database.js').backupDatabase()\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "mongodb": "^6.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
