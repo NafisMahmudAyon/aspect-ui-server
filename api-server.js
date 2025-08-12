@@ -14,10 +14,11 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DATABASE_NAME = 'component_library';
 const COMPONENTS_COLLECTION = 'components';
 const UTILS_COLLECTION = 'utils';
+const STATIC_COLLECTION = "static_files";
 const METADATA_COLLECTION = 'metadata';
-console.log(MONGODB_URI,PORT)
 // Global database connection
 let db = null;
+
 
 // Middleware
 app.use(cors());
@@ -73,6 +74,8 @@ async function getMetadata() {
   return await db.collection(METADATA_COLLECTION).findOne({ type: 'app_metadata' });
 }
 
+
+
 // 1. Health check
 app.get('/health', (req, res) => {
   res.json({
@@ -117,6 +120,7 @@ app.get('/api/components', async (req, res) => {
   try {
     const components = await getComponents();
     const utils = await getUtils();
+    const staticFiles = await getStaticFiles();
     
     // Format response similar to original structure
     const formattedComponents = components.map(comp => ({
@@ -141,12 +145,24 @@ app.get('/api/components', async (req, res) => {
         return acc;
       }, {})
     }));
+
+    const formattedStatic = staticFiles.map((staticFile) => ({
+			id: staticFile.id,
+			name: staticFile.name,
+			path: staticFile.path,
+			description: staticFile.description,
+			files: Object.keys(staticFile.files || {}).reduce((acc, fileType) => {
+				acc[fileType] = staticFile.files[fileType].map((file) => file.filename);
+				return acc;
+			}, {}),
+		}));
     
     res.json({
       success: true,
       data: {
         components: formattedComponents,
-        utils: formattedUtils
+        utils: formattedUtils,
+        static: formattedStatic
       }
     });
   } catch (error) {
