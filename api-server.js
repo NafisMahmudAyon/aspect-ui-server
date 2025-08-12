@@ -61,6 +61,14 @@ async function getUtil(utilId) {
   return await db.collection(UTILS_COLLECTION).findOne({ id: utilId });
 }
 
+async function getStaticFiles(filter = {}) {
+  return await db.collection(STATIC_COLLECTION).find(filter).toArray();
+}
+
+async function getStaticFile(staticId) {
+  return await db.collection(STATIC_COLLECTION).findOne({ id: staticId });
+}
+
 async function getMetadata() {
   return await db.collection(METADATA_COLLECTION).findOne({ type: 'app_metadata' });
 }
@@ -80,6 +88,7 @@ app.get('/api/info', async (req, res) => {
     const metadata = await getMetadata();
     const componentsCount = await db.collection(COMPONENTS_COLLECTION).countDocuments();
     const utilsCount = await db.collection(UTILS_COLLECTION).countDocuments();
+    const staticCount = await db.collection(STATIC_COLLECTION).countDocuments();
     
     res.json({
       success: true,
@@ -88,6 +97,7 @@ app.get('/api/info', async (req, res) => {
         statistics: {
           components: componentsCount,
           utils: utilsCount,
+          static: staticCount,
           lastUpdated: metadata?.lastUpdated || null,
           databaseUpdatedAt: metadata?.databaseUpdatedAt || null
         }
@@ -563,6 +573,183 @@ app.get('/api/components/:componentId/languages', async (req, res) => {
 //   }
 // });
 
+// 14. Get static file content (GitHub raw style) - for CSS files like aspect-ui.css
+app.get('/api/raw/static/:staticId/:fileType/:filename', async (req, res) => {
+  try {
+    const { staticId, fileType, filename } = req.params;
+    const staticFile = await getStaticFile(staticId);
+    
+    if (!staticFile) {
+      return res.status(404).send('Static file group not found');
+    }
+    
+    if (!staticFile.files[fileType]) {
+      return res.status(404).send('File type not found');
+    }
+    
+    const file = staticFile.files[fileType].find(f => f.filename === filename);
+    
+    if (!file) {
+      return res.status(404).send('File not found');
+    }
+    
+    // Set appropriate content type
+    const ext = filename.split('.').pop().toLowerCase();
+    const contentTypes = {
+      'css': 'text/css',
+      'js': 'application/javascript',
+      'jsx': 'application/javascript',
+      'ts': 'application/typescript',
+      'tsx': 'application/typescript',
+      'json': 'application/json',
+      'md': 'text/markdown',
+      'html': 'text/html'
+    };
+    
+    res.setHeader('Content-Type', contentTypes[ext] || 'text/plain');
+    res.send(file.content);
+  } catch (error) {
+    res.status(500).send('Server error');
+  }
+});
+
+// 15. Get static file info (JSON response)
+app.get('/api/static/:staticId', async (req, res) => {
+  try {
+    const { staticId } = req.params;
+    const staticFile = await getStaticFile(staticId);
+    
+    if (!staticFile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Static file group not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: staticFile
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch static file group',
+      details: error.message
+    });
+  }
+});
+
+// 16. Get specific static file with metadata (JSON response)
+app.get('/api/static/:staticId/:fileType/:filename', async (req, res) => {
+  try {
+    const { staticId, fileType, filename } = req.params;
+    const staticFile = await getStaticFile(staticId);
+    
+    if (!staticFile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Static file group not found'
+      });
+    }
+    
+    if (!staticFile.files[fileType]) {
+      return res.status(404).json({
+        success: false,
+        error: 'File type not found'
+      });
+    }
+    
+    const file = staticFile.files[fileType].find(f => f.filename === filename);
+    
+    if (!file) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        filename: file.filename,
+        fileType,
+        staticGroup: staticId,
+        url: file.url,
+        content: file.content,
+        size: file.size,
+        type: file.type || fileType,
+        rawUrl: `${req.protocol}://${req.get('host')}/api/raw/static/${staticId}/${fileType}/${filename}`
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch static file',
+      details: error.message
+    });
+  }
+});
+
+// 17. Get all static files of a specific type
+app.get('/api/static/:staticId/files/:fileType', async (req, res) => {
+  try {
+    const { staticId, fileType } = req.params;
+    const staticFile = await getStaticFile(staticId);
+    
+    if (!staticFile) {
+      return res.status(404).json({
+        success: false,
+        error: 'Static file group not found'
+      });
+    }
+    
+    if (!staticFile.files[fileType]) {
+      return res.status(404).json({
+        success: false,
+        error: `File type '${fileType}' not available for this static group`
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        staticGroup: staticId,
+        fileType,
+        files: staticFile.files[fileType]
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch static files',
+      details: error.message
+    });
+  }
+});
+
+// 18. Special endpoint for aspect-ui.css (direct access)
+app.get('/api/css/aspect-ui.css', async (req, res) => {
+  try {
+    const staticFile = await getStaticFile('aspect-ui');
+    
+    if (!staticFile || !staticFile.files.css) {
+      return res.status(404).send('aspect-ui.css not found');
+    }
+    
+    const cssFile = staticFile.files.css.find(f => f.filename === 'aspect-ui.css');
+    
+    if (!cssFile) {
+      return res.status(404).send('aspect-ui.css not found');
+    }
+    
+    res.setHeader('Content-Type', 'text/css');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    res.send(cssFile.content);
+  } catch (error) {
+    res.status(500).send('Server error');
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('❌ Server error:', err.stack);
@@ -607,6 +794,17 @@ async function startServer() {
     console.log(`GET  /api/components/bulk/:language - Get all components with files`);
     console.log(`GET  /api/components/search?q=query&dependency=dep - Search components`);
     console.log(`GET  /api/components/:componentId/languages - List available languages`);
+    console.log(
+			`GET  /api/raw/static/:staticId/:fileType/:filename - Get raw static file (CSS, etc.)`
+		);
+		console.log(`GET  /api/css/aspect-ui.css - Direct access to AspectUI CSS`);
+		console.log(`GET  /api/static/:staticId - Get static file group info`);
+		console.log(
+			`GET  /api/static/:staticId/:fileType/:filename - Get specific static file (JSON)`
+		);
+		console.log(
+			`GET  /api/static/:staticId/files/:fileType - Get all files of specific type`
+		);
     console.log(`GET  /api/tree/:language? - Get file tree structure`);
     console.log('\n✅ Server ready!');
   });

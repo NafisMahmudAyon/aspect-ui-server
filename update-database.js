@@ -10,6 +10,7 @@ const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017";
 const DATABASE_NAME = "component_library";
 const COMPONENTS_COLLECTION = "components";
 const UTILS_COLLECTION = "utils";
+const STATIC_COLLECTION = "static_files";
 const METADATA_COLLECTION = "metadata";
 const JSON_FILE_PATH = "component-data.json";
 
@@ -81,6 +82,15 @@ class DatabaseUpdater {
 				.createIndex({ id: 1 }, { unique: true });
 			await this.db.collection(UTILS_COLLECTION).createIndex({ name: 1 });
 
+			// Static files collection indexes
+			await this.db
+				.collection(STATIC_COLLECTION)
+				.createIndex({ id: 1 }, { unique: true });
+			await this.db.collection(STATIC_COLLECTION).createIndex({ name: 1 });
+			await this.db
+				.collection(STATIC_COLLECTION)
+				.createIndex({ "files.css.filename": 1 });
+
 			// Metadata collection indexes
 			await this.db
 				.collection(METADATA_COLLECTION)
@@ -141,6 +151,30 @@ class DatabaseUpdater {
 		}
 	}
 
+	// Update static files collection
+	async updateStaticFiles(staticFiles) {
+		try {
+			console.log("🎨 Updating static files collection...");
+			const collection = this.db.collection(STATIC_COLLECTION);
+
+			// Clear existing data
+			await collection.deleteMany({});
+			console.log("🗑️ Cleared existing static files");
+
+			// Insert new data
+			const staticArray = Object.values(staticFiles || {});
+			if (staticArray.length > 0) {
+				const result = await collection.insertMany(staticArray);
+				console.log(`✅ Inserted ${result.insertedCount} static file groups`);
+			}
+
+			return staticArray.length;
+		} catch (error) {
+			console.error("❌ Error updating static files:", error);
+			throw error;
+		}
+	}
+
 	// Update metadata collection
 	async updateMetadata(metadata) {
 		try {
@@ -178,6 +212,9 @@ class DatabaseUpdater {
 			const utilsCount = await this.db
 				.collection(UTILS_COLLECTION)
 				.countDocuments();
+			const staticCount = await this.db
+					.collection(STATIC_COLLECTION)
+					.countDocuments();
 
 			// Get file statistics
 			const pipeline = [
@@ -199,6 +236,7 @@ class DatabaseUpdater {
 			return {
 				components: componentsCount,
 				utils: utilsCount,
+				static: staticCount,
 				totalFiles: totalFiles,
 			};
 		} catch (error) {
@@ -224,6 +262,7 @@ class DatabaseUpdater {
 			// Update collections
 			const componentsCount = await this.updateComponents(data.components);
 			const utilsCount = await this.updateUtils(data.utils);
+      const staticCount = await this.updateStaticFiles(data.static);
 			await this.updateMetadata(data.metadata);
 
 			// Get final statistics
@@ -237,8 +276,10 @@ class DatabaseUpdater {
 			console.log("================");
 			console.log(`Components updated: ${componentsCount}`);
 			console.log(`Utils updated: ${utilsCount}`);
+      console.log(`Static files updated: ${staticCount}`);
 			console.log(`Database components: ${stats.components}`);
 			console.log(`Database utils: ${stats.utils}`);
+      console.log(`Database static files: ${stats.static}`);
 			console.log(`Total processing time: ${duration.toFixed(2)} seconds`);
 			console.log("✅ Database update completed successfully!");
 
@@ -246,6 +287,7 @@ class DatabaseUpdater {
 				success: true,
 				componentsCount,
 				utilsCount,
+				staticCount,
 				duration: duration.toFixed(2),
 			};
 		} catch (error) {
@@ -285,6 +327,7 @@ async function clearDatabase() {
 
 		await updater.db.collection(COMPONENTS_COLLECTION).deleteMany({});
 		await updater.db.collection(UTILS_COLLECTION).deleteMany({});
+    await updater.db.collection(STATIC_COLLECTION).deleteMany({});
 		await updater.db.collection(METADATA_COLLECTION).deleteMany({});
 
 		console.log("✅ Database cleared successfully");
@@ -309,6 +352,10 @@ async function backupDatabase() {
 			.collection(UTILS_COLLECTION)
 			.find({})
 			.toArray();
+		const staticFiles = await updater.db
+				.collection(STATIC_COLLECTION)
+				.find({})
+				.toArray();
 		const metadata = await updater.db
 			.collection(METADATA_COLLECTION)
 			.findOne({ type: "app_metadata" });
@@ -320,6 +367,10 @@ async function backupDatabase() {
 			}, {}),
 			utils: utils.reduce((acc, util) => {
 				acc[util.id] = util;
+				return acc;
+			}, {}),
+			static: staticFiles.reduce((acc, staticFile) => {
+				acc[staticFile.id] = staticFile;
 				return acc;
 			}, {}),
 			metadata: metadata || {},

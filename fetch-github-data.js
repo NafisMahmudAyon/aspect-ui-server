@@ -599,6 +599,21 @@ const utils = {
 	},
 };
 
+// Add CSS and other static files configuration
+const staticFiles = {
+  'aspect-ui': {
+    name: 'AspectUI Core',
+    path: 'aspect-ui',
+    description: 'Core CSS and configuration files for AspectUI',
+    files: {
+      css: ['aspect-ui.css'],
+      typescript: [], // Add any TS config files if needed
+      javascript: []  // Add any JS config files if needed
+    }
+  }
+  // Add more static file groups as needed
+};
+
 // Configuration
 const BASE_GITHUB_URL =
 	"https://raw.githubusercontent.com/NafisMahmudAyon/aspect-ui-components-folders";
@@ -641,17 +656,19 @@ async function fetchAllComponentFiles() {
 	const allData = {
 		components: {},
 		utils: {},
+		static: {},
 		metadata: {
 			lastUpdated: new Date().toISOString(),
 			totalComponents: Object.keys(componentList).length,
 			totalUtils: Object.keys(utils).length,
+			totalStaticFiles: Object.keys(staticFiles).length,
 			githubRepo: "NafisMahmudAyon/aspect-ui-components-folders",
 		},
 	};
 
-	console.log("Starting to fetch component files...\n");
-
+	
 	// Fetch component files
+	console.log("Starting to fetch component files...\n");
 	for (const [componentId, component] of Object.entries(componentList)) {
 		console.log(`\n📂 Processing component: ${componentId}`);
 
@@ -725,6 +742,53 @@ async function fetchAllComponentFiles() {
 		}
 	}
 
+	// Fetch static files (CSS, configs, etc.)
+	console.log("\n📂 Processing static files...");
+	for (const [staticId, staticGroup] of Object.entries(staticFiles)) {
+		console.log(`\n🎨 Processing static group: ${staticId}`);
+
+		allData.static[staticId] = {
+			id: staticId,
+			name: staticGroup.name,
+			path: staticGroup.path,
+			description: staticGroup.description || "",
+			files: {},
+		};
+
+		// Fetch files for each type (css, js, ts, etc.)
+		for (const [fileType, filenames] of Object.entries(staticGroup.files)) {
+			if (filenames.length === 0) continue;
+
+			console.log(`  🎯 File type: ${fileType}`);
+			allData.static[staticId].files[fileType] = [];
+
+			for (const filename of filenames) {
+				// Special handling for different file types
+				let fileUrl;
+				if (fileType === "css") {
+					fileUrl = `${BASE_GITHUB_URL}/typescript/components/${staticGroup.path}/${filename}`;
+				} else {
+					fileUrl = `${BASE_GITHUB_URL}/${fileType}/components/${staticGroup.path}/${filename}`;
+				}
+
+				const content = await fetchFileContent(fileUrl);
+
+				allData.static[staticId].files[fileType].push({
+					filename,
+					url: fileUrl,
+					content:
+						content || `/* Error: Could not fetch content for ${filename} */`,
+					success: content !== null,
+					size: content ? content.length : 0,
+					type: fileType,
+				});
+
+				// Add delay to avoid rate limiting
+				await delay(100);
+			}
+		}
+	}
+
 	return allData;
 }
 
@@ -779,6 +843,23 @@ function calculateStats(data) {
 				totalSize += file.size;
 				languageStats[language].files++;
 				languageStats[language].size += file.size;
+			}
+		}
+	}
+
+	// Static files stats
+	for (const staticGroup of Object.values(data.static || {})) {
+		for (const [fileType, files] of Object.entries(staticGroup.files)) {
+			if (!languageStats[fileType]) {
+				languageStats[fileType] = { files: 0, size: 0 };
+			}
+
+			for (const file of files) {
+				totalFiles++;
+				if (file.success) successfulFiles++;
+				totalSize += file.size;
+				languageStats[fileType].files++;
+				languageStats[fileType].size += file.size;
 			}
 		}
 	}
